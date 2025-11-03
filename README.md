@@ -1,4 +1,6 @@
-# **Firmable ETL Pipeline**
+# **Firmable ETL Pipeline** 
+
+
 
 ## **1\. Overview**
 
@@ -47,6 +49,8 @@ The code in this repository implements a local prototype that runs as a series o
 For a production-grade application, I prefer the below approach, tech stack, or system to build a scalable ETL pipeline to extract company data and serve it downstream to empower analytics.
 
 The target architecture, illustrated in the diagram below, is designed for scalability, observability, and robustness using a modern cloud stack (AWS).
+
+![alt text](diagram-export-11-3-2025-4_06_15-PM.png)
 
 **Description:**
 
