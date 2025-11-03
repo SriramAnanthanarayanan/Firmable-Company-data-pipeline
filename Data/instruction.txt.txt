@@ -1,0 +1,9 @@
+Since the dataset is very large, I haven’t uploaded any data here. However, we can download the ABR AML data from the official website. There are approximately 20 XML files that need to be parsed to extract company information.
+
+Below are the links. We need to download both:
+
+ABN Bulk Extract Part 1
+
+ABN Bulk Extract Part 2
+
+Combined, these 20 XML files contain over 19 million records.
