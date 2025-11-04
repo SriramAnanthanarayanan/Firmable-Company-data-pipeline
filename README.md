@@ -179,10 +179,38 @@ Refer to db/ddl\_scripts.sql for more information about the schema.
 **Prompt Used:**
 
 """  
-Determine if the two company names refer to the same Australian business entity.  
- 1\. Crawl: "{row.company\_name}"  
- 2\. ABR: "{cand\_name}"  
- Answer only 'Yes' or 'No'.  
+        You are an expert in Australian business entity resolution. Your task is to determine if web data and official business register data refer to the same company.
+
+        CONTEXT:
+        - Common Crawl data is extracted from company websites (may have informal names, abbreviations)
+        - ABR data is from Australian Business Register (official legal names, may be formal)
+        - Australian companies often trade under different names than their legal registration
+        - Consider common variations: "Pty Ltd" vs "Proprietary Limited", abbreviations, "The" prefix
+
+        MATCHING GUIDELINES:
+        1. Strong match indicators:
+        - ABN found on website matches ABR record exactly (if available)
+        - Domain name clearly derives from entity name
+        - Address match (same suburb/postcode is strong signal)
+        - Trading name listed in ABR matches website name
+
+        2. Weak match indicators:
+        - Similar industry only
+        - Similar name but different legal structure
+        - Geographic proximity only
+
+        3. Non-match indicators:
+        - Completely different business activities
+        - Different states with no connection
+        - Name similarity is coincidental (e.g., "Smith Consulting" is common)
+
+        EXAMPLES:
+
+        Example 1 - MATCH:
+        Website: "acmewidgets.com.au", Name: "Acme Widgets", Location: "Sydney NSW"
+        ABR: ABN 12-345-678-901, Name: "ACME WIDGETS PTY LTD", Location: "Sydney NSW 2000"
+        Reasoning: Domain matches entity name closely, same city. The website uses informal trading name while ABR has formal legal name.
+        Decision: MATCH, Confidence: HIGH 
 """
 
 ## **7\. ETL Pipeline Implementation**
@@ -212,6 +240,33 @@ Data quality checks are currently implicit (e.g., ABN validation in commoncrawl\
 
 The entity matching design in entity\_matching.py is a multi-stage cascade:
 
-1. **Rule-Based Match:** First, it performs a high-confidence match directly in SQL, joining records where TRIM(cc.abn) \= TRIM(abr.abn). This is the fastest and most reliable match.  
-2. **Fuzzy Match:** For remaining Common Crawl records, it attempts a fuzzy string match. To optimize, it blocks records by postcode (only comparing records within the same postcode) and then uses rapidfuzz.fuzz.token\_sort\_ratio to compare company names.  
-3. **LLM Match (Optional):** For records that still don't match, an optional step can be enabled to send the candidate data to OpenAI's GPT-4. The LLM is asked to act as an expert and determine if the two entities are the same, handling complex cases that fuzzy logic would miss.
+# Stage 1: Rule-Based Match (SQL)
+
+Logic: First, it performs a high-confidence match directly in SQL, joining records where the cleaned ABR (Australian Business Number) from Common Crawl matches a record in the ABR dataset (TRIM(cc.abn) = TRIM(abr.abn)).
+
+Purpose: This is the fastest, cheapest, and most reliable match. It captures all the "easy wins" where a company clearly lists its valid ABN on its website.
+
+# Stage 2: Fuzzy Match (Python + rapidfuzz)
+
+Logic: For all Common Crawl records that did not match in Stage 1, this stage attempts a fuzzy string match on the company name.
+
+Key Optimization (Blocking): To avoid comparing every crawl record to all 3 million+ ABR records (an N*M problem), it uses a technique called blocking. The records are "blocked" by postcode. This means it only compares the names of companies that are located in the same postcode, drastically reducing the search space.
+
+Scoring: It uses rapidfuzz.fuzz.token_sort_ratio, which is effective at handling minor spelling differences, "Pty Ltd" vs. "Pty Limited", or reordered words.
+
+Purpose: Catches entities that are clearly the same but are missing an ABN on their website (e.g., "Acme Inc" in 2000 vs. "Acme Incorporated" in 2000).
+
+# Stage 3: LLM Match (Optional AI Match)
+
+Logic: For records that still don't match, this optional step sends the candidate data (Crawl company name, ABR company name) to OpenAI's GPT-4.
+
+Purpose: This is the "expert" step to handle high ambiguity. An LLM can use semantic reasoning to identify matches that rules and fuzzy logic would miss. For example, it can determine that Crawl: "ACME" at 123 Main St is the same as ABR: "ACME CORPORATION PTY LTD" at 123 Main St, Sydney, even if the string similarity score is low.
+
+
+### Special Note
+
+In an ideal scenario, a rule-based system will have significantly lower coverage compared to other methods. Therefore, it will primarily rely on fallback mechanisms such as fuzzy logic or an LLM-based approach. This presents an excellent opportunity to leverage the capabilities of LLMs to accomplish the task effectively.
+
+Additionally, we can consider exposing our data warehouses to the LLM through an MCP server. This would allow the model to gain a complete understanding of the data and perform tasks more seamlessly.
+
+**IDE Used**  - VS Code for development

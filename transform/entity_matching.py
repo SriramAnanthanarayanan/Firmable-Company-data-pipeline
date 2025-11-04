@@ -184,7 +184,40 @@ def llm_match(crawl_df, abr_df):
     for _, crawl_row in crawl_df.iterrows():
         # Build prompt for GPT
         prompt = f"""
-        Match the following company to the ABR dataset. 
+        You are an expert in Australian business entity resolution. Your task is to determine if web data and official business register data refer to the same company.
+
+        CONTEXT:
+        - Common Crawl data is extracted from company websites (may have informal names, abbreviations)
+        - ABR data is from Australian Business Register (official legal names, may be formal)
+        - Australian companies often trade under different names than their legal registration
+        - Consider common variations: "Pty Ltd" vs "Proprietary Limited", abbreviations, "The" prefix
+
+        MATCHING GUIDELINES:
+        1. Strong match indicators:
+        - ABN found on website matches ABR record exactly (if available)
+        - Domain name clearly derives from entity name
+        - Address match (same suburb/postcode is strong signal)
+        - Trading name listed in ABR matches website name
+
+        2. Weak match indicators:
+        - Similar industry only
+        - Similar name but different legal structure
+        - Geographic proximity only
+
+        3. Non-match indicators:
+        - Completely different business activities
+        - Different states with no connection
+        - Name similarity is coincidental (e.g., "Smith Consulting" is common)
+
+        EXAMPLES:
+
+        Example 1 - MATCH:
+        Website: "acmewidgets.com.au", Name: "Acme Widgets", Location: "Sydney NSW"
+        ABR: ABN 12-345-678-901, Name: "ACME WIDGETS PTY LTD", Location: "Sydney NSW 2000"
+        Reasoning: Domain matches entity name closely, same city. The website uses informal trading name while ABR has formal legal name.
+        Decision: MATCH, Confidence: HIGH
+        Here are the details..
+        
         Company: {crawl_row['company_name']} 
         Postcode: {crawl_row['postcode']}
         ABR options: {abr_df[['entity_name','abn','postcode']].to_dict(orient='records')}
@@ -231,7 +264,7 @@ def run_entity_matching_chunked(batch_size=50000, enable_llm=False):
     final_matches = []
 
     # --- Step 1: Rule-based SQL matches ---
-    print("➡️ Performing rule-based SQL match...")
+    print("Performing rule-based SQL match...")
     rule_matches = rule_based_match_sql()
     print(f"Rule-based matches found: {len(rule_matches)}")
     if not rule_matches.empty:
@@ -241,7 +274,7 @@ def run_entity_matching_chunked(batch_size=50000, enable_llm=False):
 
     # --- Step 2: Process in chunks for fuzzy / LLM ---
     while not crawl_df.empty:
-        print(f"➡️ Fetching ABR chunk offset={offset}")
+        print(f"Fetching ABR chunk offset={offset}")
         abr_chunk = fetch_abr_chunk(offset=offset, limit=batch_size)
         if abr_chunk.empty:
             break
@@ -262,7 +295,7 @@ def run_entity_matching_chunked(batch_size=50000, enable_llm=False):
         offset += batch_size
 
     final_df = pd.concat(final_matches, ignore_index=True) if final_matches else pd.DataFrame([])
-    print(f"\n✅ Total Matches: {len(final_df)}")
+    print(f"\n Total Matches: {len(final_df)}")
     store_matches_to_db(final_df)
 
 # ---------------- Entrypoint ---------------- #
