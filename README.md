@@ -140,7 +140,7 @@ For a production-grade application, I prefer the below approach, tech stack, or 
 
 The target architecture, illustrated in the diagram below, is designed for scalability, observability, and robustness using a modern cloud stack (AWS).
 
-![Uploading image.png…]()
+<img width="1883" height="847" alt="image" src="https://github.com/user-attachments/assets/e921a479-05e9-4184-b01f-d3f19ef54ac4" />
 
 
 **Description:**
