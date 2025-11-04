@@ -153,6 +153,18 @@ The target architecture, illustrated in the diagram below, is designed for scala
 * **Consumption:** BI Tools (like Tableau or Power BI) and other data consumers query Snowflake.  
 * **Observability:** CloudWatch and Datadog collect logs (Airflow, ECS, Snowflake) and metrics (query performance, container stats) for monitoring and alerting.
 
+### **Component Justification**
+
+| Component | Technology | Rationale (Why this choice?) |
+| :---- | :---- | :---- |
+| **Orchestration** | **Airflow (AWS MWAA)** | **Why:** Manages complex dependencies as code (DAGs). Provides robust retry/backfill logic, task-level failure alerts, and a UI for visualizing runs. This is non-trivial to build and essential for a resilient pipeline. **Why MWAA?** It's the managed service. It eliminates the high operational overhead of self-hosting, patching, and scaling an Airflow cluster. |
+| **Data Lake (Storage)** | **AWS S3** | **Why:** It's the core principle of modern data stacks: **decouple storage from compute**. S3 is durable (11 nines), infinitely scalable, and cost-effective. **Role:** It acts as the single source of truth. Storing raw files in the Raw Zone (immutable) and processed Parquet files in the Curated Zone allows multiple compute engines (dbt, Snowflake, Spark) to access the same data without costly duplication. |
+| **Ingestion / Processing** | **ECS/Fargate** | **Why:** Our Python scripts are too long-running and resource-intensive for AWS Lambda (which has time/memory/package size limits). Running them on dedicated EC2 instances creates a 24/7 cost and scaling/patching burden. **Why Fargate?** It's the "serverless container" sweet spot. It allows us to run our heavy-duty, containerized Python/dbt tasks with isolated resources and pay *only* for the execution time, with zero operational overhead. |
+| **Data Transformation** | **dbt (Data Build Tool)** | **Why:** It moves our core business logic (from data\_cleaning.py, entity\_matching.py) out of a Python "black box" and into version-controlled, auditable SQL models. **Key Wins:** 1\. **Testing:** Data quality (unique, not null, etc.) becomes explicit dbt test steps, not implicit Python checks. 2\. **Lineage:** Auto-generates documentation and lineage graphs, making the pipeline understandable. 3\. **Modularity:** Replaces monolithic scripts with composable, reusable SQL models. |
+| **Data Warehouse** | **Snowflake** | **Why:** Its **separation of storage and compute** is the key. In our prototype (PostgreSQL), a massive dbt run would lock tables and block analyst queries. **With Snowflake:** We can run a large XL-Warehouse for the 2-hour dbt build (ETL) and a separate S-Warehouse for BI Tools (Analytics). *They do not block each other*. This workload isolation is critical for production. It also natively queries Parquet on S3. |
+| **Observability** | **CloudWatch & Datadog** | **Why Both?** They serve two different needs. **CloudWatch:** Monitors *AWS infrastructure*. (e.g., "Is the Fargate task CPU at 100%?", "Did the MWAA service run?"). **Datadog:** Monitors the *data application*. (e.g., "Alert me if the dbt pipeline latency exceeds 30 mins," "Dashboard the number of records matched per day," "Alert if dbt test failures increase.") |
+
+
 ## **5\. Database Schema (PostgreSQL DDL)**
 
 The database schema is structured into three layers for data lineage and quality: stg (Staging for raw data), pre\_dwh (Pre-Data Warehouse for cleaned data), and dwh (Data Warehouse for the final unified view).
