@@ -1,6 +1,4 @@
-# **Firmable ETL Pipeline** 
-
-
+# **Firmable ETL Pipeline**
 
 ## **1\. Overview**
 
@@ -22,7 +20,99 @@ firmable-etl-pipeline/
 ├── pyproject.toml               \# UV package configuration  
 └── README.md                    \# Project documentation
 
-## **3\. Pipeline Architecture and Design**
+## **3\. Setup and Running (using uv)**
+
+This guide provides setup and execution steps using the uv package manager.
+
+### **Step 1: Prerequisites**
+
+* **Install uv:** If you don't have uv, install it using pip, brew, or curl:  
+  \# On macOS / Linux  
+  curl \-LsSf \[https://astral.sh/uv/install.sh\](https://astral.sh/uv/install.sh) | sh
+
+  \# On Windows (PowerShell)  
+  irm \[https://astral.sh/uv/install-powershell.ps1\](https://astral.sh/uv/install-powershell.ps1) | iex
+
+* **PostgreSQL:** A running PostgreSQL instance that you can connect to.  
+* **ABR Data:** Your ABR XML data files downloaded to a local directory.
+
+### **Step 2: Code & Environment Setup**
+
+1. **Clone the Repository:**  
+   git clone \<your-repository-url\>  
+   cd firmable-etl-pipeline
+
+2. Create .env File:  
+   This project uses a .env file for database and API credentials. Create a file named .env in the project's root directory:  
+   DB\_HOST=localhost  
+   DB\_PORT=5432  
+   DB\_NAME=prd\_firmable  
+   DB\_USER=your\_postgres\_user  
+   DB\_PASSWORD=your\_postgres\_password  
+   OPENAI\_API\_KEY=sk-your-openai-key-here
+
+3. Initialize Virtual Environment:  
+   uv will create a .venv directory and manage dependencies from pyproject.toml or requirements.txt.  
+   \# This creates a virtual environment named .venv  
+   uv venv
+
+4. **Activate Environment:**  
+   \# On macOS / Linux  
+   source .venv/bin/activate
+
+   \# On Windows (PowerShell)  
+   .venv\\Scripts\\Activate.ps1
+
+5. Install Dependencies:  
+   Use uv to install all required packages from requirements.txt.  
+   uv pip install \-r requirements.txt
+
+### **Step 3: Database Setup**
+
+1. Connect to PostgreSQL:  
+   Use psql or a tool like pgadmin4 to connect to your instance.  
+   psql \-U your\_postgres\_user \-d postgres
+
+2. **Create Database & User (if not done):**  
+   CREATE DATABASE prd\_firmable;  
+   CREATE USER etl\_user WITH PASSWORD 'your\_postgres\_password';  
+   GRANT ALL PRIVILEGES ON DATABASE prd\_firmable TO etl\_user;
+
+   *(Note: Ensure the DB\_USER in your .env matches this user.)*  
+3. Run the DDL Script:  
+   Execute the DDL script to create all schemas and tables.  
+   \# Make sure your .env user (etl\_user) has privileges  
+   psql \-U etl\_user \-d prd\_firmable \-f db/ddl\_scripts.sql 
+
+### **Step 4: Run the ETL Pipeline (In Order)**
+
+You must run the scripts sequentially as they depend on each other.
+
+1. **Run abr\_parser.py (Extract ABR):**  
+   * **Action:** Parses local ABR XML files and loads them into stg.abr\_raw\_companies.  
+   * **Before running:** Update the FOLDER\_PATH \= "../data" variable in abr\_parser.py to point to the directory containing your XML files.  
+   * **Run:**  
+     uv run python extract/abr\_parser.py
+
+2. **Run commoncrawl\_scraper.py (Extract Common Crawl):**  
+   * **Action:** Scrapes the Common Crawl index and loads data into stg.common\_crawl\_raw\_companies. This may take a long time.  
+   * **Run:**  
+     uv run python extract/commoncrawl\_scraper.py
+
+3. **Run data\_cleaning.py (Transform \- Clean):**  
+   * **Action:** Reads from stg tables, cleans/standardizes data, and saves it to the pre\_dwh schema.  
+   * **Run:**  
+     uv run python transform/data\_cleaning.py
+
+4. **Run entity\_matching.py (Transform \- Match):**  
+   * **Action:** Reads from pre\_dwh, performs the matching logic, and loads the final unified dataset into dwh.dim\_entity\_match\_company\_data.  
+   * **Note:** You can set enable\_llm=False in the script's if \_\_name\_\_ \== "\_\_main\_\_": block to avoid running LLM calls for testing. If you have an API key, you can enable it.  
+   * **Run:**  
+     uv run python transform/entity\_matching.py
+
+After these steps, your dwh.dim\_entity\_match\_company\_data table will be populated and ready for analysis.
+
+## **4\. Pipeline Architecture and Design**
 
 ### **Simplified Prototype**
 
@@ -50,7 +140,7 @@ For a production-grade application, I prefer the below approach, tech stack, or 
 
 The target architecture, illustrated in the diagram below, is designed for scalability, observability, and robustness using a modern cloud stack (AWS).
 
-![alt text](diagram-export-11-3-2025-4_06_15-PM.png)
+![alt text](image.png)
 
 **Description:**
 
@@ -62,13 +152,13 @@ The target architecture, illustrated in the diagram below, is designed for scala
 * **Consumption:** BI Tools (like Tableau or Power BI) and other data consumers query Snowflake.  
 * **Observability:** CloudWatch and Datadog collect logs (Airflow, ECS, Snowflake) and metrics (query performance, container stats) for monitoring and alerting.
 
-## **4\. Database Schema (PostgreSQL DDL)**
+## **5\. Database Schema (PostgreSQL DDL)**
 
 The database schema is structured into three layers for data lineage and quality: stg (Staging for raw data), pre\_dwh (Pre-Data Warehouse for cleaned data), and dwh (Data Warehouse for the final unified view).
 
-Refer to db/ddl\_Scripts.sql for more information about the schema.
+Refer to db/ddl\_scripts.sql for more information about the schema.
 
-## **5\. AI Model Used & Rationale**
+## **6\. AI Model Used & Rationale**
 
 * **Model:** OpenAI's GPT-4  
 * **Rationale:** The LLM's strength is semantic understanding and contextual reasoning, which surpasses traditional algorithms for difficult entity resolution. For instance, it can determine that "ACME Pty Ltd" at "123 Main St" is the same entity as "ACME Corporation" at "123 Main St, Sydney" even if string similarity is low, by reasoning across the entire set of address, name, and domain data points.
@@ -82,7 +172,7 @@ Determine if the two company names refer to the same Australian business entity.
  Answer only 'Yes' or 'No'.  
 """
 
-## **6\. ETL Pipeline Implementation**
+## **7\. ETL Pipeline Implementation**
 
 The pipeline logic is implemented as a set of Python scripts:
 
@@ -91,7 +181,7 @@ The pipeline logic is implemented as a set of Python scripts:
 * **data\_cleaning.py:** Transforms the data. Reads from stg tables into pandas, performs standardization (states, postcodes), cleaning (company names), and deduplication, then loads the results into pre\_dwh tables.  
 * **entity\_matching.py:** Transforms and Loads the final model. It reads from the pre\_dwh tables and performs a multi-stage entity matching process to link Common Crawl records to ABR records. The final matched dataset is loaded into dwh.dim\_entity\_match\_company\_data.
 
-## **7\. Transformations & Data Quality**
+## **8\. Transformations & Data Quality**
 
 ### **dbt Models & Tests**
 

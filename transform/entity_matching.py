@@ -134,7 +134,7 @@ def rule_based_match_sql():
     conn.close()
     return df
 
-def fuzzy_match(crawl_df, abr_df, threshold=85):
+def fuzzy_match(crawl_df, abr_df, threshold=80):
     results = []
     if crawl_df.empty:
         return pd.DataFrame([]), crawl_df
